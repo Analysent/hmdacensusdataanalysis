@@ -1,28 +1,15 @@
 ### import FFIEC Cencus to use with HMDA Data
-from csv import DictReader
+from csv import DictReader, DictWriter
+import decimal
 import io
 import requests
 
-
+#as per requirement average household income of less than $50,000 per year in 2019
 INCOME_CUTOFF = 50000
 
 #for responses in response
 #1. The client is interested in identifying Metropolitan Statistical Areas (MSA’s) that have an average household income of less than $50,000 per year in 2019 and joining that list to CFPB’s HMDA dataset
-#DP03_0052PEA,
-#DP03_0052PM,
-#DP03_0052PMA
-#DP03_0052EA,
-#DP03_0052M,
-#DP03_0052MA
-#DP03_0052PEA,
-#DP03_0052PM,
-#DP03_0052PMA
-# DP03_0052PEA,DP03_0052PM,DP03_0052PMA
-#DP03_0052EA,DP03_0052M,DP03_0052MA
-#DP03_0052PEA,DP03_0052PM,DP03_0052PMA
-# DP03_0053EA,DP03_0053M,DP03_0053MA
-# DP03_0053PEA,DP03_0053PM,DP03_0053PMA
-#DP03_0054EA,DP03_0054M,DP03_0054MA
+
 
 
 # 2.The MSA data can be obtained using the Census API. 
@@ -30,35 +17,34 @@ INCOME_CUTOFF = 50000
 # 'DP03_0052PEA','DP03_0052PM','DP03_0052PMA', 'DP03_0053EA','DP03_0053M','DP03_0053MA', 'DP03_0053PEA','DP03_0053PM','DP03_0053PMA',
 # 'DP03_0054EA','DP03_0054M','DP03_0054MA']
 
-mylist = ['DP03_0063E']
+def get_areas_under_50k():
+	mylist = ['DP03_0063E']
 
-areas_under_50k = []
+	areas_under_50k = []
 
-for DP in mylist:
+	for DP in mylist:
 
-	response = requests.get (f'https://api.census.gov/data/2019/acs/acs5/profile?get=NAME,{DP}&for=metropolitan%20statistical%20area/micropolitan%20statistical%20area:*')
+		response = requests.get (f'https://api.census.gov/data/2019/acs/acs5/profile?get=NAME,{DP}&for=metropolitan%20statistical%20area/micropolitan%20statistical%20area:*')
 
-	if response.status_code != 200:
-		raise Exception('Unable to retrieve census data')
+		if response.status_code != 200:
+			raise Exception('Unable to retrieve census data')
 
-	response_json = response.json()
+		response_json = response.json()
 
-	print(response_json[0])
-	# Finds very few areas under 50,000 which seems odd -- would expect more. Is this the right DP?
-	# Start at 1 to skip header line
-	for i in range(1, len(response_json)):
-		area = response_json[i]
-		#print(area)
-		# ["Big Stone Gap, VA Micro Area","57868","13720"]
-		income = int(area[1])
-		if income < INCOME_CUTOFF:
-			areas_under_50k.append(area)
+		print(response_json[0])
+		# Looked for DP list in census data and 
+		# Start at 1 to skip header line
+		for i in range(1, len(response_json)):
+			area = response_json[i]
+			#print(area)
+			# ["Big Stone Gap, VA Micro Area","57868","13720"]
+			income = int(area[1])
+			if income < INCOME_CUTOFF:
+				areas_under_50k.append(area)
+	return areas_under_50k
 
-			break
 	#print(DP,response.text)
 	#print (response.status_code)
-
-print(areas_under_50k)
 
 
 #3.	For each MSA identified in step 2, retrieve loan-level data from the HMDA Data Browser API
@@ -68,35 +54,183 @@ print(areas_under_50k)
 
 #  curl "https://ffiec.cfpb.gov/v2/data-browser-api/view/aggregations?states=MD&years=2018&actions_taken=5,6&races=White,Asian,Joint"
 
-for area in areas_under_50k:
-	msamds = area[2]
-	url = f'https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?msamds={msamds}&years=2019'
-	print(url)
-	response = requests.get(url)
+def aggregate_loan_data(areas_under_50k):
+	with open('output.csv', 'w') as csv_file:
+		fieldnames = ['total_loans','White','Joint','Race Not Available','Black or African American', 
+		'American Indian or Alaska Native',
+		 'Native Hawaiian or Other Pacific Islander',
+		 '2 or more minority races',
+		 "avg_loan_amount",
+		 "avg_loan_to_value_ratio",
+		 "avg_interest_rate",
+		 "avg_total_loan_costs",
+		 "avg_loan_term",
+		 "avg_property_value", 
+		 "avg_income"
+		  ]
 
-	if response.status_code != 200:
-		raise Exception('Could not retrieve msamds')
+		writer = DictWriter (csv_file, fieldnames=fieldnames)
+		writer.writeheader()
+    	
+    
+		for area in areas_under_50k:
+			msamds = area[2]
+			url = f'https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?msamds={msamds}&years=2019'
+			print(url)
+			response = requests.get(url)
 
-	print(type(response.content))
+			if response.status_code != 200:
+				raise Exception('Could not retrieve msamds')
 
-	filename = 'temp.csv'
-	with open(filename, 'wb') as csv_file:
-		csv_file.write(response.content)
+			#rint(type(response.content))
 
 
-	with open(filename) as csv_file:
-		reader = DictReader(csv_file)
-		for row in reader:
-			print(row)
-	"""
-	string_content = response.content.decode("utf-8") 
-	csv_data = io.StringIO(string_content)
-	csv_data.seek(0)
-	print(csv_data)
-	"""
+			"""
+			filename = 'temp.csv'
+			with open(filename, 'wb') as csv_file:
+				csv_file.write(response.content)
 
-	break
 
+			with open(filename) as csv_file:
+				reader = DictReader(csv_file)
+				for row in reader:
+					print(row)
+			"""
+			string_content = response.content.decode("utf-8") 
+			csv_file = io.StringIO(string_content)
+
+			reader = DictReader(csv_file)
+			total_loans = 0
+			loans_by_race = {}
+			loan_amount = decimal.Decimal("0")
+			loan_to_value_ratio = decimal.Decimal("0")
+			loan_to_value_ratio = 0
+			interest_rate=decimal.Decimal("0")
+			total_loan_costs=decimal.Decimal("0")
+			loan_term=0
+			property_value=decimal.Decimal("0")
+			income=decimal.Decimal("0")
+
+			for row in reader:
+				total_loans = total_loans + 1
+				derived_race = row.get("derived_race")
+				#print('row:', row)
+				
+				print('derived_race:',derived_race)
+
+				if derived_race not in loans_by_race:
+					loans_by_race[derived_race] = 0
+
+				loans_by_race[derived_race] += 1
+
+				loan_amount += decimal.Decimal(row.get("loan_amount"))
+				#TypeError: conversion from NoneType to Decimal is not supported
+				try:
+					loan_to_value_ratio_raw = row.get("loan_to_value_ratio")
+					print('loan_to_value_ratio_raw', loan_to_value_ratio_raw)
+					loan_to_value_ratio += decimal.Decimal(loan_to_value_ratio_raw)
+
+				except decimal.InvalidOperation:
+					# What to do here?
+					pass
+				try:
+					interest_rate_raw = row.get("interest_rate")
+					print('interest_rate_raw', interest_rate_raw)
+					interest_rate += decimal.Decimal(interest_rate_raw)
+				except decimal.InvalidOperation:
+					# What to do here?
+					pass
+				try:
+					total_loan_costs_raw = row.get("total_loan_costs")
+					print('total_loan_costs_raw', total_loan_costs_raw)
+					total_loan_costs += decimal.Decimal(total_loan_costs_raw)
+				except decimal.InvalidOperation:
+					# What to do here?
+					pass	
+				try:
+
+					loan_term += int(row.get("loan_term"))
+				except ValueError:
+					pass
+				try:
+					property_value_raw = row.get("property_value")
+					print('property_value_raw', property_value_raw)
+					property_value += decimal.Decimal(property_value_raw)
+				except decimal.InvalidOperation:
+					# What to do here?
+					pass	
+				try:
+					income_raw = row.get("income")
+					print('income_raw', income_raw)
+					income += decimal.Decimal(income_raw)
+				except decimal.InvalidOperation:
+					# What to do here?
+					pass	
+
+			avg_loan_amount = loan_amount/total_loans
+			avg_loan_to_value_ratio = loan_to_value_ratio/total_loans
+			avg_interest_rate = interest_rate/total_loans
+			avg_total_loan_costs = total_loan_costs/total_loans
+			avg_loan_term = loan_term/total_loans
+			avg_property_value = property_value/total_loans
+			avg_income = income/total_loans
+
+			row_data = {
+				'total_loans': total_loans,
+				'avg_loan_amount': '{:.2f}'.format(avg_loan_amount),
+				'avg_loan_to_value_ratio': '{:.2f}'.format(avg_loan_to_value_ratio),
+				'avg_interest_rate': '{:.2f}'.format(avg_interest_rate),
+				'avg_total_loan_costs': '{:.2f}'.format(avg_total_loan_costs),
+				'avg_loan_term': '{:.2f}'.format(avg_loan_term),
+				'avg_property_value': '{:.2f}'.format(avg_property_value),
+				'avg_income': '{:.2f}'.format(avg_income),
+			}
+			row_data.update(loans_by_race)
+
+
+			"""
+		    ['total_loans','White','Joint','Race Not Available','Black or African American', 
+		'American Indian or Alaska Native',
+		 'Native Hawaiian or Other Pacific Islander',
+		 '2 or more minority races',
+		 "avg_loan_amount", "avg_loan_to_value_ratio", "avg_interest_rate", "avg_total_loan_costs", "avg_loan_term", "avg_property_value", "avg_income"]
+		 	"""
+
+
+			writer.writerow(row_data)
+
+			print ('total_loans:',total_loans)
+			print ('loans_by_race:',loans_by_race)
+			print ('loan_amount:', loan_amount)
+			print ('avg_loan_amount:', avg_loan_amount)
+			print ('avg_loan_to_value_ratio:', avg_loan_to_value_ratio)
+			print ('avg_interest_rate:', avg_interest_rate)
+			print ('avg_total_loan_costs:', avg_total_loan_costs)
+			print ('avg_loan_term:', avg_loan_term)
+			print ('avg_property_value:', avg_property_value)
+			print ('avg_income:', avg_income)
+			"""
+			4.	The response from each HMDA API call will be a CSV file with individual level mortgage loan data.  Generate a final CSV with the following aggregations applied to each MSA.  The final CSV file should have a single row for each MSA identified in Step 2.
+				a.	A column with the total number of loans for this MSA.
+				b.	A column for each value of the ‘derived_race’ field, with a count of loans that fall under that category.
+				c.	Columns containing the average of the following fields "loan_amount", "loan_to_value_ratio", "interest_rate", "total_loan_costs", "loan_term", "property_value", "income"
+				d.	A column containing the average of "tract_minority_population_percent", processed to avoid unintentional weighting of values due to an uneven distribution of loans across tracts.
+			"""
+
+			#for msamds
+			#msamds_total += 
+
+
+def main():
+	#areas_under_50k = get_areas_under_50k()
+	#print(areas_under_50k)
+
+	#aggregate_loan_data(areas_under_50k)
+	aggregate_loan_data([['test', '', '41900']])
+
+
+if __name__ == "__main__":
+	main()
 
 #json format and then convert to csv
 
