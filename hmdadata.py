@@ -8,14 +8,13 @@ import requests
 INCOME_CUTOFF = 50000
 
 #for responses in response
-#1. The client is interested in identifying Metropolitan Statistical Areas (MSA’s) that have an average household income of less than $50,000 per year in 2019 and joining that list to CFPB’s HMDA dataset
+#1. The client is interested in identifying Metropolitan Statistical Areas (MSA’s) that have an average household income of less than $50,000 per year in 2019 
+# and joining that list to CFPB’s HMDA dataset
 
 
 
 # 2.The MSA data can be obtained using the Census API. 
-# mylist = ['DP03_0052PEA','DP03_0052PM','DP03_0052PMA','DP03_0052EA','DP03_0052M','DP03_0052MA','DP03_0052PEA','DP03_0052PM','DP03_0052PMA','DP03_0052PEA','DP03_0052PM', 'DP03_0052EA','DP03_0052M','DP03_0052MA', 
-# 'DP03_0052PEA','DP03_0052PM','DP03_0052PMA', 'DP03_0053EA','DP03_0053M','DP03_0053MA', 'DP03_0053PEA','DP03_0053PM','DP03_0053PMA',
-# 'DP03_0054EA','DP03_0054M','DP03_0054MA']
+#DP03_0063E (Estimate!!INCOME AND BENEFITS (IN 2019 INFLATION-ADJUSTED DOLLARS)!!Total households!!Mean household income (dollars))
 
 def get_areas_under_50k():
 	mylist = ['DP03_0063E']
@@ -31,13 +30,12 @@ def get_areas_under_50k():
 
 		response_json = response.json()
 
-		print(response_json[0])
+		#print(response_json[0])
 		# Looked for DP list in census data and 
 		# Start at 1 to skip header line
 		for i in range(1, len(response_json)):
 			area = response_json[i]
 			#print(area)
-			# ["Big Stone Gap, VA Micro Area","57868","13720"]
 			income = int(area[1])
 			if income < INCOME_CUTOFF:
 				areas_under_50k.append(area)
@@ -52,11 +50,12 @@ def get_areas_under_50k():
 # https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?msamds=<MSA_ID>&years=2019, 
 # where <MSA_ID> is the MSA identifier.
 
-#  curl "https://ffiec.cfpb.gov/v2/data-browser-api/view/aggregations?states=MD&years=2018&actions_taken=5,6&races=White,Asian,Joint"
 
 def aggregate_loan_data(areas_under_50k):
 	with open('output.csv', 'w') as csv_file:
-		fieldnames = ['total_loans','White','Joint','Race Not Available','Black or African American', 
+		fieldnames = [
+		'msamds','total_loans','White','Joint','Race Not Available','Black or African American', 
+		'Asian',
 		'American Indian or Alaska Native',
 		 'Native Hawaiian or Other Pacific Islander',
 		 '2 or more minority races',
@@ -66,7 +65,8 @@ def aggregate_loan_data(areas_under_50k):
 		 "avg_total_loan_costs",
 		 "avg_loan_term",
 		 "avg_property_value", 
-		 "avg_income"
+		 "avg_income",
+		 "avg_tract_minority_population_percent"
 		  ]
 
 		writer = DictWriter (csv_file, fieldnames=fieldnames)
@@ -76,13 +76,13 @@ def aggregate_loan_data(areas_under_50k):
 		for area in areas_under_50k:
 			msamds = area[2]
 			url = f'https://ffiec.cfpb.gov/v2/data-browser-api/view/csv?msamds={msamds}&years=2019'
-			print(url)
+			#print(url)
 			response = requests.get(url)
 
 			if response.status_code != 200:
 				raise Exception('Could not retrieve msamds')
 
-			#rint(type(response.content))
+			#print(type(response.content))
 
 
 			"""
@@ -110,42 +110,47 @@ def aggregate_loan_data(areas_under_50k):
 			loan_term=0
 			property_value=decimal.Decimal("0")
 			income=decimal.Decimal("0")
+			tract_minority_population_percent = decimal.Decimal("0")
 
 			for row in reader:
 				total_loans = total_loans + 1
 				derived_race = row.get("derived_race")
 				#print('row:', row)
-				
-				print('derived_race:',derived_race)
+				#print('derived_race:',derived_race)
 
 				if derived_race not in loans_by_race:
 					loans_by_race[derived_race] = 0
 
 				loans_by_race[derived_race] += 1
 
-				loan_amount += decimal.Decimal(row.get("loan_amount"))
+
+				try:
+					loan_amount_raw = row.get("loan_amount")
+					#print('loan_amount_raw', loan_amount_raw)
+					loan_amount += decimal.Decimal(loan_amount_raw)
+
+				except decimal.InvalidOperation:
+					pass
+				#loan_amount += decimal.Decimal(row.get("loan_amount"))
 				#TypeError: conversion from NoneType to Decimal is not supported
 				try:
 					loan_to_value_ratio_raw = row.get("loan_to_value_ratio")
-					print('loan_to_value_ratio_raw', loan_to_value_ratio_raw)
+					#print('loan_to_value_ratio_raw', loan_to_value_ratio_raw)
 					loan_to_value_ratio += decimal.Decimal(loan_to_value_ratio_raw)
 
 				except decimal.InvalidOperation:
-					# What to do here?
 					pass
 				try:
 					interest_rate_raw = row.get("interest_rate")
-					print('interest_rate_raw', interest_rate_raw)
+					#print('interest_rate_raw', interest_rate_raw)
 					interest_rate += decimal.Decimal(interest_rate_raw)
 				except decimal.InvalidOperation:
-					# What to do here?
 					pass
 				try:
 					total_loan_costs_raw = row.get("total_loan_costs")
-					print('total_loan_costs_raw', total_loan_costs_raw)
+					#print('total_loan_costs_raw', total_loan_costs_raw)
 					total_loan_costs += decimal.Decimal(total_loan_costs_raw)
 				except decimal.InvalidOperation:
-					# What to do here?
 					pass	
 				try:
 
@@ -154,19 +159,31 @@ def aggregate_loan_data(areas_under_50k):
 					pass
 				try:
 					property_value_raw = row.get("property_value")
-					print('property_value_raw', property_value_raw)
+					#print('property_value_raw', property_value_raw)
 					property_value += decimal.Decimal(property_value_raw)
 				except decimal.InvalidOperation:
 					# What to do here?
 					pass	
 				try:
 					income_raw = row.get("income")
-					print('income_raw', income_raw)
+					#print('income_raw', income_raw)
 					income += decimal.Decimal(income_raw)
 				except decimal.InvalidOperation:
 					# What to do here?
 					pass	
+				try:
+					tract_minority_population_percent_raw = row.get("tract_minority_population_percent")
+					#print('tract_minority_population_percent_raw', tract_minority_population_percent_raw)
+					tract_minority_population_percent += decimal.Decimal(tract_minority_population_percent_raw)
+				except decimal.InvalidOperation:
+					# What to do here?
+					pass	
 
+			print("loan amount:",loan_amount)
+			print("total loans:", total_loans)
+			#if there is no total_loans data, don't perform write a row
+			if not total_loans:
+				continue
 			avg_loan_amount = loan_amount/total_loans
 			avg_loan_to_value_ratio = loan_to_value_ratio/total_loans
 			avg_interest_rate = interest_rate/total_loans
@@ -174,8 +191,10 @@ def aggregate_loan_data(areas_under_50k):
 			avg_loan_term = loan_term/total_loans
 			avg_property_value = property_value/total_loans
 			avg_income = income/total_loans
+			avg_tract_minority_population_percent = tract_minority_population_percent/total_loans
 
 			row_data = {
+				'msamds': msamds,
 				'total_loans': total_loans,
 				'avg_loan_amount': '{:.2f}'.format(avg_loan_amount),
 				'avg_loan_to_value_ratio': '{:.2f}'.format(avg_loan_to_value_ratio),
@@ -184,6 +203,7 @@ def aggregate_loan_data(areas_under_50k):
 				'avg_loan_term': '{:.2f}'.format(avg_loan_term),
 				'avg_property_value': '{:.2f}'.format(avg_property_value),
 				'avg_income': '{:.2f}'.format(avg_income),
+				'avg_tract_minority_population_percent': '{:.2f}'.format(avg_tract_minority_population_percent),
 			}
 			row_data.update(loans_by_race)
 
@@ -209,6 +229,7 @@ def aggregate_loan_data(areas_under_50k):
 			print ('avg_loan_term:', avg_loan_term)
 			print ('avg_property_value:', avg_property_value)
 			print ('avg_income:', avg_income)
+			print('avg_tract_minority_population_percent:',avg_tract_minority_population_percent)
 			"""
 			4.	The response from each HMDA API call will be a CSV file with individual level mortgage loan data.  Generate a final CSV with the following aggregations applied to each MSA.  The final CSV file should have a single row for each MSA identified in Step 2.
 				a.	A column with the total number of loans for this MSA.
@@ -222,11 +243,11 @@ def aggregate_loan_data(areas_under_50k):
 
 
 def main():
-	#areas_under_50k = get_areas_under_50k()
+	areas_under_50k = get_areas_under_50k()
 	#print(areas_under_50k)
 
-	#aggregate_loan_data(areas_under_50k)
-	aggregate_loan_data([['test', '', '41900']])
+	aggregate_loan_data(areas_under_50k)
+	#aggregate_loan_data([['test', '', '41900']])
 
 
 if __name__ == "__main__":

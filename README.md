@@ -1,13 +1,13 @@
-# repo name here
+# hmda census data analysis for mean income less than or equal to 50k
 
 
-Project description here
+Description:
+
+Loan information under 50k based on census data DP code for mean income less than or equal to 50k.  Read the csv file from census site and also used the DP code 
+from hmda database to collect additional home loan, borrower demography data.  Wrote the csv with columns.
     
 
 ## Usage
-
-Edit the following to match what is needed to run your particular project:
-
 
 Clone the project:
 
