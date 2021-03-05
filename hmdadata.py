@@ -250,6 +250,7 @@ def visualize_loans_by_race(loan_data):
     sum_loans_by_race = loans_by_race.sum(axis=0)
       
     # plotting 
+    # reference: https://www.pythoncharts.com/matplotlib/rotating-axis-labels/
     plt.title("Bar graph")  
     plt.xlabel("Racial Groups")  
     plt.ylabel("Number of loans")  
